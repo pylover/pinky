@@ -51,7 +51,11 @@ class Root(nanohttp.Controller):
 
 BUILTIN_SETTINGS = '''
 coolend:
-  fan: 90
+  fan:
+    speed: 90
+    gpio: 16
+    pwm_frequency: 1000
+
 '''
 
 def configure(filename=None):

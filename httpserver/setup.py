@@ -16,7 +16,8 @@ with open(
 
 dependencies = [
     'nanohttp >= 1.11.1, < 2',
-    'gunicorn'
+    'gunicorn',
+    'RPi.GPIO,
 ]
 
 
