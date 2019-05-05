@@ -15,7 +15,7 @@ with open(
 
 
 dependencies = [
-    'nanohttp',
+    'nanohttp >= 1.11.1, < 2',
     'gunicorn'
 ]
 

@@ -18,6 +18,7 @@ class Speed(int):
 
 
 class CoolendFan(nanohttp.RestController):
+
     @nanohttp.json
     def get(self):
         return settings.coolend.fan.speed
@@ -64,8 +65,10 @@ def configure(filename=None):
     fan = settings.coolend.fan
     gpio.setmode(gpio.BOARD)
     gpio.setup(fan.gpio, gpio.OUT, initial=True)
-    pwm = gpio.PWM(fan..gpio, fan.pwm_frequency)
+    pwm = gpio.PWM(fan.gpio, fan.pwm_frequency)
 
 
-app = nanohttp.Application(Root())
+class PinkyServer(Application):
+    __root__ = Root()
+
 
