@@ -21,23 +21,29 @@ class CoolendFan(nanohttp.RestController):
 
     @nanohttp.json
     def get(self):
-        return settings.coolend.fan.speed
+        return nanohttp.settings.coolend.fan.speed
 
     @nanohttp.json
     def start(self):
-        pwm.start(Speed(settings.coolend.fan.speed).todutycycle())
+        pwm.start(Speed(nanohttp.settings.coolend.fan.speed).todutycycle())
 
     @nanohttp.json
     def stop(self):
         pwm.stop()
-
+        io_ = nanohttp.settings.coolend.fan.gpio
+        gpio.output(io_, False)
+        
     @nanohttp.json
     def update(self):
-        value = nanohttp.contex.form.get('speed')
-        if value is None:
-            raise nanohttp.BadRequest('spped field is required')
+        value = nanohttp.context.form.get('speed')
 
-        settings.coolend.fan.speed = value
+        if value is None:
+            value = nanohttp.context.query.get('speed')
+
+        if value is None:
+            raise nanohttp.HTTPBadRequest('speed field is required')
+
+        nanohttp.settings.coolend.fan.speed = value
         pwm.ChangeDutyCycle(Speed(value).todutycycle())
 
 
@@ -59,20 +65,22 @@ coolend:
 '''
 
 def configure(filename=None):
-    global pwm, state
+    global pwm
     nanohttp.configure(BUILTIN_SETTINGS)
 
     if filename:
-        settings.load_file(filename)
+        nanohttp.settings.load_file(filename)
 
     # GPIO Initialization
-    fan = settings.coolend.fan
+    fan = nanohttp.settings.coolend.fan
+    gpio.setwarnings(False)
+    gpio.cleanup(fan.gpio)
     gpio.setmode(gpio.BOARD)
-    gpio.setup(fan.gpio, gpio.OUT, initial=True)
+    gpio.setup(fan.gpio, gpio.OUT, initial=False)
     pwm = gpio.PWM(fan.gpio, fan.pwm_frequency)
 
 
-class PinkyServer(Application):
+class PinkyServer(nanohttp.Application):
     __root__ = Root()
 
 
