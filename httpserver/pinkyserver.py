@@ -20,21 +20,35 @@ class Speed(int):
 
 
 class CoolendFan(nanohttp.RestController):
-
+    _status = 'off'
+    
+    @property
+    def status(self):
+        fan = nanohttp.settings.coolend.fan
+        return dict(
+            speed=fan.speed,
+            frequency=fan.frequency,
+            status=self._status
+        )
+    
     @nanohttp.json
     def get(self):
-        return nanohttp.settings.coolend.fan.speed
+        return self.status 
 
     @nanohttp.json
     def start(self):
         pwm.start(Speed(nanohttp.settings.coolend.fan.speed).todutycycle())
+        self._status  = 'on'
+        return self.status 
 
     @nanohttp.json
     def stop(self):
         pwm.stop()
         io_ = nanohttp.settings.coolend.fan.gpio
         gpio.output(io_, False)
-        
+        self._status  = 'off'
+        return self.status 
+
     @nanohttp.json
     def update(self):
         value = nanohttp.context.form.get('speed')
@@ -47,6 +61,7 @@ class CoolendFan(nanohttp.RestController):
 
         nanohttp.settings.coolend.fan.speed = value
         pwm.ChangeDutyCycle(Speed(value).todutycycle())
+        return self.status 
 
 
 class Root(nanohttp.Controller):
@@ -65,7 +80,7 @@ coolend:
   fan:
     speed: 90
     gpio: 16
-    pwm_frequency: 1000
+    frequency: 1000
 
 '''
 
@@ -82,7 +97,7 @@ def configure(filename=None):
     gpio.cleanup(fan.gpio)
     gpio.setmode(gpio.BOARD)
     gpio.setup(fan.gpio, gpio.OUT, initial=False)
-    pwm = gpio.PWM(fan.gpio, fan.pwm_frequency)
+    pwm = gpio.PWM(fan.gpio, fan.frequency)
 
 
 class Pinky(nanohttp.Application):
