@@ -1,3 +1,5 @@
+#! /usr/bin/env python3.6
+import sys
 import pickle
 
 import RPi.GPIO as gpio
@@ -56,6 +58,9 @@ class Root(nanohttp.Controller):
 
 
 BUILTIN_SETTINGS = '''
+listen:
+  host: 0.0.0.0
+  port: 80
 coolend:
   fan:
     speed: 90
@@ -80,7 +85,13 @@ def configure(filename=None):
     pwm = gpio.PWM(fan.gpio, fan.pwm_frequency)
 
 
-class PinkyServer(nanohttp.Application):
+class Pinky(nanohttp.Application):
     __root__ = Root()
 
 
+if __name__ == '__main__':
+    configure(None if len(sys.argv) <= 1 else sys.argv[1])
+    listen = nanohttp.settings.listen
+    nanohttp.quickstart(application=Pinky(), host=listen.host, port=listen.port) 
+#    bjoern.run(Pinky(), listen.address, listen.port, reuse_port=True)
+   
