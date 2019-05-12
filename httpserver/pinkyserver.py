@@ -1,6 +1,9 @@
 #! /usr/bin/env python3.6
 import sys
+import time
 import pickle
+import threading
+import datetime
 
 import RPi.GPIO as gpio
 import nanohttp
@@ -27,11 +30,38 @@ class Speed(int):
         return (self * 70 / 100) + 30
 
 
-class OutputPin:
-    def __init__(self, io_, initial=False):
-        self.gpio = io_
+class Pin:
+    gpio = None
+
+    def __init__(self, number, *a, **kw):
+        self.gpio = number
+        gpio.setup(number, *a, **kw)
+
+
+class InputPin(Pin):
+    oldvalue = None 
+
+    def __init__(self, number, pull_updown=gpio.PUD_OFF):
+        self.pull_updown = pull_updown
+        super().__init__(number, gpio.IN, pull_up_down=pull_updown)
+        self.reset()
+    
+    @property
+    def high(self):
+        return gpio.input(self.gpio)
+    
+    @property
+    def changed(self):
+        return self.oldvalue ^ self.high
+    
+    def reset(self):
+        self.oldvalue = self.high
+
+    
+class OutputPin(Pin):
+    def __init__(self, number, initial=False):
         self.ishigh = initial
-        gpio.setup(self.gpio, gpio.OUT, initial=initial)
+        super().__init__(number, gpio.OUT, initial=initial)
     
     def render(self, status):
         gpio.output(self.gpio, status)
@@ -57,12 +87,16 @@ class Relay(OutputPin):
 
     def off(self):
         self.up()
+    
+    @property
+    def ison(self):
+        return not self.ishigh
 
     @property
     def status(self):
         result = super().status
         result.update(dict(
-            on=not self.ishigh
+            on=self.ison
         ))
         return result
 
@@ -158,6 +192,45 @@ class RelayController(ModelController):
         return total_status()
 
 
+def worker():
+    shuttingdown = None
+    c = nanohttp.settings.worker
+    delay = c.shutdown_delay
+    interval = c.interval
+    
+    print('Starting Pinky worker')
+    while True:
+        if closing:
+            break
+
+        if m82_model.changed:
+            m82_model.reset()
+            print(f'M82 pin is changed: {m82_model.high}')
+
+            if m82_model.high:
+                if not power_model.ison:
+                    print(f'Turning on main power')
+                    power_model.on()
+                
+                if not light_model.ison:
+                    print(f'Turning light on')
+                    light_model.on()
+            else:
+                shuttingdown = datetime.datetime.now() \
+                    if power_model.ison else None
+            
+        if shuttingdown is not None:
+            remaining = int(
+                    delay - (datetime.datetime.now() - shuttingdown).total_seconds()
+                )
+            print(f'Shutting down in {remaining} seconds')
+            if remaining <= 0:
+                power_model.off()
+                light_model.off()
+                shuttingdown = None
+
+        time.sleep(interval)
+
 
 BUILTIN_SETTINGS = '''
 listen:
@@ -172,27 +245,44 @@ coolend:
     speed: 90
     gpio: 16
     frequency: 1000
-
+m82:
+  gpio: 18 
+worker:
+  interval: 2 
+  shutdown_delay: 4 
 '''
 
-def configure(filename=None):
-    global coolendfan_model, power_model, light_model
-    nanohttp.configure(BUILTIN_SETTINGS)
 
-    if filename:
-        nanohttp.settings.load_file(filename)
+def initialize_gpio():
+    global coolendfan_model, power_model, light_model, m82_model
+    c = nanohttp.settings
 
     # GPIO Initialization
     gpio.setwarnings(False)
     gpio.setmode(gpio.BOARD)
     
-    coolendfan_model = Fan(nanohttp.settings.coolend.fan)
-    power_model = Relay(nanohttp.settings.power)
-    light_model = Relay(nanohttp.settings.light)
+    coolendfan_model = Fan(c.coolend.fan)
+    power_model = Relay(c.power)
+    light_model = Relay(c.light)
+    m82_model = InputPin(c.m82.gpio, pull_updown=gpio.PUD_UP)
 
 
-if __name__ == '__main__':
+def configure(filename=None):
+    nanohttp.configure(BUILTIN_SETTINGS)
+
+    if filename:
+        nanohttp.settings.load_file(filename)
+
+
+def main():
+    global closing
+    closing = False
     configure(None if len(sys.argv) <= 1 else sys.argv[1])
+    initialize_gpio()
+    
+    # Start background thread
+    worker_ = threading.Thread(target=worker, daemon=True, name='pinky-worker')
+    worker_.start()
 
     class Root(nanohttp.Controller):
         coolendfan = CoolendFanController(coolendfan_model)
@@ -203,7 +293,13 @@ if __name__ == '__main__':
         def index(self):
             return total_status()
 
-
     listen = nanohttp.settings.listen
-    nanohttp.quickstart(Root(), host=listen.host, port=listen.port) 
+    try: 
+        nanohttp.quickstart(Root(), host=listen.host, port=listen.port) 
+    finally:
+        closing = True
+        worker_.join()
 
+
+if __name__ == '__main__':
+    main()
